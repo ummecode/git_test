@@ -1,0 +1,131 @@
+#include <LoRa.h>
+#include <SPI.h>
+#include <RH_RF95.h> // RF95 from RadioHead Librarey 
+
+
+#define RFM95_CS 5 //CS if Lora connected to pin 5
+
+#define RFM95_RST 14 //RST of Lora connected to pin 14
+
+#define RFM95_INT 2 //INT of Lora connected to pin 2
+
+
+// Change to 434.0 or other frequency, must match RX's freq!
+
+#define RF95_FREQ 433.0
+
+
+// Singleton instance of the radio driver
+
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+ 
+#define ss 5
+#define rst 14
+#define dio0 2
+ 
+char value = 48;
+int a=0;
+void setup() 
+{
+  Serial.begin(9600);
+  while (!Serial);
+
+  Serial.println("LoRa Receiver");
+M1();
+}
+
+
+ 
+void loop() 
+{
+  //if(a==0){
+  //  M1();
+ // }
+  if(a==1){
+    M2();
+  }
+  if(a==2){
+    M3();
+  }
+  
+ if(a==3){
+  M4();
+ }
+  }
+  
+ 
+
+void M1(){
+   LoRa.setPins(ss, rst, dio0);
+  while (!LoRa.begin(433E6))     //433E6 - Asia, 866E6 - Europe, 915E6 - North America
+  {
+    Serial.println(".");
+    delay(500);
+  }
+   Serial.println("LoRa Initializing OK!");
+a=1;
+}
+
+void M2(){
+  
+     int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    // received a packet.
+    Serial.print("Received packet '");
+
+    // read packet
+    while (LoRa.available()) {
+      
+      Serial.print((char)LoRa.read());
+      }
+
+    // print RSSI of packet
+    Serial.print("' with RSSI ");
+    Serial.println(LoRa.packetRssi());
+    a=2;
+    delay(1000);
+  }
+  }
+
+
+void M3(){
+  pinMode(RFM95_RST, OUTPUT); 
+
+  digitalWrite(RFM95_RST, LOW);
+
+  delay(10);
+
+  digitalWrite(RFM95_RST, HIGH);
+
+  delay(10);
+
+ while (!rf95.init()) {
+
+    Serial.println("LoRa radio init failed");
+
+    delay(500);
+ }
+
+ if (!rf95.setFrequency(RF95_FREQ)) {
+
+    Serial.println("setFrequency failed");
+
+    while (1);
+
+  }
+
+ rf95.setTxPower(18); //Transmission power of the Lora Module
+  //Serial.print("start");
+  a=3;
+}
+
+void M4(){
+  uint8_t data[] = "OK";
+  rf95.send(data, sizeof(data));
+   Serial.print("Send:");
+  Serial.println((char*)data);
+  Serial.println();
+  
+a=1;
+ delay(1000);
+  }
