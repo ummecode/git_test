@@ -1,0 +1,184 @@
+import thingspeak
+import Adafruit_DHT
+import os
+import Adafruit_GPIO.SPI as SPI
+import AHT20
+import datetime, time
+import board
+import neopixel
+import Adafruit_SSD1306
+from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
+import time
+import RPi.GPIO as GPIO
+from time import sleep
+from SX127x.LoRa import *
+from SX127x.LoRaArgumentParser import LoRaArgumentParser
+from SX127x.board_config import BOARD
+channel_id = 2279740 # put here the ID of the channel you created before
+write_key = 'G2RK9LEO41KTJGO5' # update the "WRITE KEY"
+
+RST = 24
+
+DC = 23
+SPI_PORT = 0
+SPI_DEVICE = 0
+pixels = neopixel.NeoPixel(board.D12, 5)
+# aht20 = AHT20.AHT20()
+
+relay_ch = 27
+led_ch = 23
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(relay_ch, GPIO.OUT)
+GPIO.setup(led_ch, GPIO.OUT)
+GPIO.output(led_ch,GPIO.LOW)
+GPIO.output(relay_ch,GPIO.LOW)
+BOARD.setup()
+pixels.fill((0, 0, 0))
+time.sleep(1)
+disp = Adafruit_SSD1306.SSD1306_128_64(rst=RST, i2c_address=0x3C)
+disp.begin()
+disp.clear()
+disp.display()
+width = disp.width
+height = disp.height
+image = Image.new('1', (width, height))
+draw = ImageDraw.Draw(image)
+draw.rectangle((0,0,width,height), outline=0, fill=0)
+padding = 2
+shape_width = 20
+top = padding
+bottom = height-padding
+x = padding
+font = ImageFont.load_default()
+draw.text((x, top),    'RASPBERRY PI',  font=font, fill=255)
+draw.text((x, top+18), 'DHT11', font=font, fill=255)
+disp.image(image)
+disp.display()
+sensor = Adafruit_DHT.DHT11
+pin = 4
+a = 0
+c = 0
+
+def measure(channel):
+  try:
+      humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
+      if humidity is not None and temperature is not None:
+          global temp
+          global hum
+          global temp1
+          global hum1
+          temp = ' {0:0.2f} *C '.format(temperature)	
+          hum  = ' {0:0.2f} %'.format(humidity)
+          temp1 = ' {0:0.2f} '.format(temperature)	
+          hum1  = ' {0:0.2f} '.format(humidity)
+          print('Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity))	
+          draw.rectangle((0,0,width,height), outline=0, fill=0)
+
+          draw.text((x, top),    'TEMP:',  font=font, fill=255)
+          draw.text((x, top+16),  'HUM:',  font=font, fill=255)
+
+          draw.text((x+30, top), temp, font=font, fill=255)
+          draw.text((x+30, top+16), hum, font=font, fill=255)
+          disp.image(image)
+          disp.display()
+      else:
+          print('Failed to get reading. Try again!')	
+          sleep(2)
+      response = channel.update({'field1': temperature, 'field2': humidity})
+  except:
+        print("connection failure")	
+
+class mylora(LoRa):
+    def __init__(self, verbose=False):
+        super(mylora, self).__init__(verbose)
+        self.set_mode(MODE.SLEEP)
+        self.set_dio_mapping([0] * 6)
+        self.var=0
+        
+    def start(self):
+      if __name__ == "__main__":
+        channel = thingspeak.Channel(id=channel_id,api_key=write_key )
+        while True:
+            while (self.var==0):
+             if c == 0:
+                print ("Send: INF")
+                pixels.fill((255,0,0))
+                self.write_payload([255, 255, 0, 0, 73, 78, 70, 0]) # Send INF
+                self.set_mode(MODE.TX)
+                self.reset_ptr_rx()
+                self.set_mode(MODE.RXCONT) # Receiver mode
+            
+                start_time = time.time()
+                while (time.time() - start_time < 1): # wait until receive data or 10s
+                    pass;
+             if c == 1:
+                 
+                measure(channel)
+                e=str(temp)
+                f=str(hum)
+                d=e+f
+                m=[(ord(c)) for c in d]
+                self.write_payload(m)
+                pixels.fill((0,255, 0))
+                if (int(float(temp1)) < 50) or (int(float(hum1)) > 65):
+                     GPIO.output(relay_ch,GPIO.HIGH)
+                else:
+                     GPIO.output(relay_ch,GPIO.LOW)
+                self.set_mode(MODE.TX)     
+                self.reset_ptr_rx()
+                self.set_mode(MODE.RXCONT) # Receiver mode
+                
+                start_time = time.time()
+                while (time.time() - start_time < 2): # wait until receive data or 10s
+                    pass;
+
+            self.var=0
+            self.reset_ptr_rx()
+            self.set_mode(MODE.RXCONT) # Receiver mode
+            time.sleep(1)
+     
+     
+        
+    def on_rx_done(self):
+        BOARD.led_on()
+        self.clear_irq_flags(RxDone=1)
+        payload = self.read_payload(nocheck=True)
+        mens=bytes(payload).decode("utf-8",'ignore') # Receive DATA
+        mens=mens[2:-1]
+#         print(mens)
+        print ("Receive:",mens)
+        print('\n')
+        BOARD.led_off()
+        if mens=="OK":
+         global c
+         c=1
+         pixels.fill((0, 0, 255))
+         self.set_mode(MODE.TX)
+         self.var=1
+
+
+   
+lora = mylora(verbose=False)
+lora.set_mode(MODE.STDBY)
+lora.set_pa_config(pa_select=1)
+lora.set_freq(433)
+
+try: sleep(0.001)
+except: pass
+
+try:
+    lora.start()
+except KeyboardInterrupt:
+    sys.stdout.flush()
+    sys.stderr.write("KeyboardInterrupt\n")
+finally:
+    sys.stdout.flush()
+    lora.set_mode(MODE.SLEEP)
+    BOARD.teardown()
+
+
+
+
